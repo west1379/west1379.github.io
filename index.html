@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>四级词汇极简刷题工具</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --primary: #1a237e;
+    --primary-light: #e8eaf6;
+    --text: #222222;
+    --correct: #2e7d32;
+    --correct-bg: #e8f5e9;
+    --wrong: #c62828;
+    --wrong-bg: #ffebee;
+    --border: #e0e0e0;
+    --bg: #ffffff;
+  }
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+  }
+  body {
+    max-width: 600px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    position: relative;
+    padding-bottom: 64px;
+  }
+  /* ===== 顶部栏 ===== */
+  .topbar {
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .topbar h1 {
+    font-size: 1.2rem;
+    color: var(--primary);
+    font-weight: 700;
+    letter-spacing: .5px;
+  }
+  .counter {
+    font-size: .85rem;
+    color: #888;
+  }
+  /* ===== 页面切换 ===== */
+  .page { display: none; flex: 1; }
+  .page.active { display: block; }
+  /* ===== 刷题区 ===== */
+  .quiz-wrap { padding: 24px 20px; }
+  .word-display {
+    text-align: center;
+    font-size: 2.6rem;
+    font-weight: 700;
+    color: var(--primary);
+    letter-spacing: 1px;
+    margin: 20px 0 32px;
+    word-break: break-word;
+    line-height: 1.2;
+  }
+  .options { display: flex; flex-direction: column; gap: 12px; }
+  .option {
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+    font-size: 1.15rem;
+    cursor: pointer;
+    transition: all .15s ease;
+    background: #fff;
+    text-align: left;
+    user-select: none;
+  }
+  .option.selected {
+    border-color: var(--primary);
+    background: var(--primary-light);
+    color: var(--primary);
+    font-weight: 600;
+  }
+  .option.correct {
+    border-color: var(--correct);
+    background: var(--correct-bg);
+    color: var(--correct);
+    font-weight: 600;
+  }
+  .option.wrong {
+    border-color: var(--wrong);
+    background: var(--wrong-bg);
+    color: var(--wrong);
+    font-weight: 600;
+  }
+  .option.disabled { pointer-events: none; }
+  .option .tag {
+    display: none;
+    font-size: .75rem;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  .option.correct .tag, .option.wrong .tag { display: inline; }
+  /* ===== 按钮 ===== */
+  .btn {
+    display: block;
+    width: 100%;
+    margin-top: 20px;
+    padding: 15px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  .btn:active { opacity: .8; }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-confirm { background: var(--primary); color: #fff; }
+  .btn-next { background: var(--primary); color: #fff; }
+  .btn[disabled] { opacity: .4; cursor: not-allowed; }
+  /* ===== 结果卡片 ===== */
+  .result-card {
+    margin-top: 24px;
+    border: 2px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    display: none;
+  }
+  .result-card.show { display: block; }
+  .result-card.correct { border-color: var(--correct); }
+  .result-card.wrong { border-color: var(--wrong); }
+  .result-header {
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+  .result-header.ok { color: var(--correct); }
+  .result-header.no { color: var(--wrong); }
+  .rc-word { font-size: 1.8rem; font-weight: 700; color: var(--primary); margin-bottom: 10px; }
+  .rc-meaning { font-size: 1.1rem; margin-bottom: 6px; }
+  .rc-meaning .pos { color: var(--primary); font-weight: 600; margin-right: 4px; }
+  .rc-example { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border); }
+  .rc-example .en { font-size: 1rem; font-style: italic; color: #444; margin-bottom: 6px; }
+  .rc-example .cn { font-size: .95rem; color: #666; }
+  /* ===== 错题本 ===== */
+  .wrong-wrap { padding: 16px 20px; }
+  .wrong-empty { text-align: center; color: #999; padding: 60px 0; font-size: 1rem; }
+  .wrong-item {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+  .wrong-item .info { flex: 1; }
+  .wrong-item .w-word { font-size: 1.2rem; font-weight: 700; color: var(--primary); }
+  .wrong-item .w-mean { font-size: .95rem; color: #555; margin-top: 4px; }
+  .wrong-item .remove {
+    flex-shrink: 0;
+    background: #fff;
+    color: var(--wrong);
+    border: 1.5px solid var(--wrong);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: .9rem;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  /* ===== 导入区 ===== */
+  .import-wrap { padding: 24px 20px; }
+  .import-box {
+    border: 2px dashed var(--border);
+    border-radius: 14px;
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .2s;
+  }
+  .import-box:hover { border-color: var(--primary); }
+  .import-box .icon { font-size: 2.5rem; margin-bottom: 12px; }
+  .import-box p { color: #666; font-size: .95rem; }
+  .import-box .hint { font-size: .8rem; color: #999; margin-top: 8px; }
+  .import-status {
+    margin-top: 16px;
+    padding: 14px;
+    border-radius: 10px;
+    background: var(--primary-light);
+    color: var(--primary);
+    font-size: .95rem;
+    display: none;
+  }
+  .import-status.show { display: block; }
+  .format-toggle {
+    margin-top: 20px;
+    text-align: center;
+  }
+  .format-toggle a {
+    color: var(--primary);
+    font-size: .9rem;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .format-demo {
+    margin-top: 14px;
+    background: #f5f5f5;
+    border-radius: 10px;
+    padding: 14px;
+    font-family: monospace;
+    font-size: .8rem;
+    color: #555;
+    white-space: pre-wrap;
+    word-break: break-all;
+    display: none;
+  }
+  .format-demo.show { display: block; }
+  /* ===== 底部导航 ===== */
+  .tabbar {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    max-width: 600px;
+    margin: 0 auto;
+    height: 64px;
+    display: flex;
+    border-top: 1px solid var(--border);
+    background: #fff;
+    z-index: 100;
+  }
+  .tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: #999;
+    font-size: .8rem;
+    gap: 3px;
+    transition: color .15s;
+  }
+  .tab .ico { font-size: 1.3rem; }
+  .tab.active { color: var(--primary); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<!-- 顶部栏 -->
+<div class="topbar">
+  <h1 id="pageTitle">四级词汇极简刷题</h1>
+  <span class="counter" id="counter"></span>
+</div>
+
+<!-- ===== 刷词页 ===== -->
+<div class="page active" id="pageQuiz">
+  <div class="quiz-wrap">
+    <div class="word-display" id="wordDisplay">— —</div>
+    <div class="options" id="options"></div>
+
+    <button class="btn btn-confirm" id="btnConfirm" disabled>确定</button>
+
+    <div class="result-card" id="resultCard">
+      <div class="result-header" id="resultHeader"></div>
+      <div class="rc-word" id="rcWord"></div>
+      <div id="rcMeanings"></div>
+      <div class="rc-example" id="rcExample"></div>
+      <button class="btn btn-next" id="btnNext">下一题</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 错题本页 ===== -->
+<div class="page" id="pageWrong">
+  <div class="wrong-wrap" id="wrongList"></div>
+</div>
+
+<!-- ===== 导入页（初始无词库时显示，作为设置入口） ===== -->
+<div class="page" id="pageImport">
+  <div class="import-wrap">
+    <div class="import-box" id="importBox">
+      <div class="icon">📂</div>
+      <p>点击导入词库文件</p>
+      <div class="hint">支持 JSON / JSONL / TXT 格式，导入后自动保存在本地</div>
+    </div>
+    <div class="import-status" id="importStatus"></div>
+    <div class="format-toggle">
+      <a id="formatToggle">查看推荐词库格式</a>
+    </div>
+    <div class="format-demo" id="formatDemo">[
+  {
+    "spelling": "abandon",
+    "meanings": [
+      { "partOfSpeech": "v.", "definition": "放弃，抛弃" },
+      { "partOfSpeech": "n.", "definition": "放任，放纵" }
+    ],
+    "example": {
+      "english": "He abandoned his wife and children.",
+      "chinese": "他抛弃了他的妻子和孩子。"
+    }
+  },
+  {
+    "spelling": "ability",
+    "meanings": [
+      { "partOfSpeech": "n.", "definition": "能力，才能" }
+    ],
+    "example": {
+      "english": "She has the ability to speak four languages.",
+      "chinese": "她有能力说四种语言。"
+    }
+  }
+]
+<!-- JSONL 则为每行一个 JSON 对象 -->
+<!-- TXT 简易格式：word|词性|释义|例句英文|例句中文，每行一个单词 --></div>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept=".json,.jsonl,.txt" style="display:none">
+
+<!-- 底部导航 -->
+<div class="tabbar">
+  <div class="tab active" data-tab="quiz"><span class="ico">📖</span>刷词</div>
+  <div class="tab" data-tab="wrong"><span class="ico">📝</span>错题本</div>
+</div>
+
+<script>
+/* ======================================================
+   四级词汇极简刷题工具
+   - 纯本地化：localStorage 存储词库与错题
+   - 分片读取大文件，防止卡死
+====================================================== */
+
+const STORE_KEY = 'cet4_vocab_library';
+const WRONG_KEY = 'cet4_vocab_wrong';
+
+/* ---------- 工具函数 ---------- */
+const $ = (id) => document.getElementById(id);
+const shuffle = (arr) => {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+};
+// 字符串相似度（编辑距离归一化），用于找"字母相近"的单词
+function similarity(a, b) {
+  a = a.toLowerCase(); b = b.toLowerCase();
+  const m = a.length, n = b.length;
+  if (!m || !n) return 0;
+  if (a === b) return 1;
+  const dp = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
+  for (let j = 1; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+    }
+  }
+  const dist = dp[m][n];
+  return 1 - dist / Math.max(m, n);
+}
+// 取两个单词开头相同的前缀长度，用于"字母相近"排序加分
+function commonPrefix(a, b) {
+  a = a.toLowerCase(); b = b.toLowerCase();
+  let n = 0;
+  while (n < a.length && n < b.length && a[n] === b[n]) n++;
+  return n;
+}
+
+/* ---------- 数据层 ---------- */
+const Data = {
+  loadLibrary() {
+    try { return JSON.parse(localStorage.getItem(STORE_KEY)) || []; }
+    catch (e) { return []; }
+  },
+  saveLibrary(lib) {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(lib)); return true; }
+    catch (e) {
+      alert('本地存储空间不足，无法保存词库（可能接近 5MB 上限）。');
+      return false;
+    }
+  },
+  loadWrong() {
+    try { return JSON.parse(localStorage.getItem(WRONG_KEY)) || []; }
+    catch (e) { return []; }
+  },
+  saveWrong(list) { localStorage.setItem(WRONG_KEY, JSON.stringify(list)); },
+  addWrong(word) {
+    const list = this.loadWrong();
+    if (!list.find(w => w.spelling === word.spelling)) {
+      list.push({ spelling: word.spelling, meanings: word.meanings, addedAt: Date.now() });
+      this.saveWrong(list);
+    }
+  },
+  removeWrong(spelling) {
+    let list = this.loadWrong();
+    list = list.filter(w => w.spelling !== spelling);
+    this.saveWrong(list);
+  }
+};
+
+/* ---------- 词库解析（分片读取） ---------- */
+async function parseFileInChunks(file) {
+  const CHUNK = 256 * 1024; // 256KB 一片
+  const total = file.size;
+  let buffer = '';
+  let offset = 0;
+  let lineMode = null; // null=未知, true=按行(JSONL/TXT), false=整体JSON
+
+  // 先读一小块判断格式
+  const first = await readSlice(file, 0, Math.min(CHUNK, total));
+  const trimmed = first.trim();
+  if (trimmed.startsWith('[')) lineMode = false;
+  else lineMode = true;
+
+  if (!lineMode) {
+    // 整体 JSON 数组
+    const text = await readEntireStream(file, (loaded) => {
+      $('importStatus').textContent = `正在解析... ${(loaded / 1024 / 1024).toFixed(1)} MB`;
+    });
+    return JSON.parse(text);
+  }
+
+  // 按行解析（JSONL / TXT）
+  const results = [];
+  while (offset < total) {
+    const end = Math.min(offset + CHUNK, total);
+    const chunk = await readSlice(file, offset, end);
+    buffer += chunk;
+    // 按换行切分，保留最后一个不完整的片段
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop();
+    for (const line of lines) {
+      const item = parseLine(line);
+      if (item) results.push(item);
+    }
+    offset = end;
+    $('importStatus').textContent = `已解析 ${results.length} 词… (${(offset / 1024 / 1024).toFixed(1)} / ${(total / 1024 / 1024).toFixed(1)} MB)`;
+    await yieldToMain();
+  }
+  // 处理残余
+  if (buffer.trim()) {
+    const item = parseLine(buffer);
+    if (item) results.push(item);
+  }
+  return results;
+}
+
+function readSlice(file, start, end) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = reject;
+    r.readAsText(file.slice(start, end), 'utf-8');
+  });
+}
+function readEntireStream(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = reject;
+    r.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded); };
+    r.readAsText(file, 'utf-8');
+  });
+}
+function yieldToMain() { return new Promise(r => setTimeout(r, 0)); }
+
+// 解析单行（JSONL 或 TXT 简易格式）
+function parseLine(line) {
+  line = line.trim();
+  if (!line) return null;
+  // 尝试 JSON
+  if (line.startsWith('{')) {
+    try {
+      const obj = JSON.parse(line);
+      return normalizeWord(obj);
+    } catch (e) { return null; }
+  }
+  // TXT 简易格式：spelling|partOfSpeech|definition|exampleEn|exampleCn
+  if (line.includes('|')) {
+    const parts = line.split('|');
+    if (parts.length >= 3) {
+      return normalizeWord({
+        spelling: parts[0],
+        meanings: [{ partOfSpeech: parts[1], definition: parts[2] }],
+        example: parts[3] ? { english: parts[3], chinese: parts[4] || '' } : undefined
+      });
+    }
+  }
+  return null;
+}
+
+// 统一单词对象结构
+function normalizeWord(raw) {
+  if (!raw || !raw.spelling) return null;
+  const meanings = Array.isArray(raw.meanings)
+    ? raw.meanings.filter(m => m && m.definition)
+    : (raw.definition ? [{ partOfSpeech: raw.partOfSpeech || '', definition: raw.definition }] : []);
+  if (!meanings.length) return null;
+  return {
+    spelling: String(raw.spelling).trim(),
+    meanings: meanings.map(m => ({
+      partOfSpeech: m.partOfSpeech || '',
+      definition: m.definition
+    })),
+    example: raw.example || null
+  };
+}
+
+/* ---------- 抽题逻辑 ---------- */
+const Quiz = {
+  current: null,
+  selectedIndex: -1,
+  answered: false,
+  usedThisSession: new Set(),
+
+  start() {
+    const lib = Data.loadLibrary();
+    if (!lib.length) { switchTab('import'); return; }
+    this.next();
+  },
+
+  next() {
+    const lib = Data.loadLibrary();
+    if (!lib.length) return;
+    // 随机抽取，尽量避免本次会话重复
+    let pool = lib.filter(w => !this.usedThisSession.has(w.spelling));
+    if (!pool.length) { this.usedThisSession.clear(); pool = lib; }
+    this.current = pool[Math.floor(Math.random() * pool.length)];
+    this.usedThisSession.add(this.current.spelling);
+
+    this.selectedIndex = -1;
+    this.answered = false;
+
+    // 生成 3 个干扰项：优先同词性 + 字母相近
+    const correctDef = this.current.meanings[0];
+    const correctPos = correctDef.partOfSpeech;
+
+    // 候选：同词性、不是自己
+    let candidates = lib.filter(w =>
+      w.spelling !== this.current.spelling &&
+      w.meanings[0] && w.meanings[0].partOfSpeech === correctPos
+    );
+    // 按"字母相近度"排序
+    candidates = candidates
+      .map(w => ({
+        word: w,
+        score: similarity(w.spelling, this.current.spelling) * 2 +
+               commonPrefix(w.spelling, this.current.spelling) * 0.1
+      }))
+      .sort((a, b) => b.score - a.score);
+
+    // 从最相近的一批里随机挑 3 个（取前 ~30 个候选池，避免太固定）
+    const pool2 = candidates.slice(0, Math.min(30, candidates.length));
+    const distractors = shuffle(pool2.map(c => c.word)).slice(0, 3);
+
+    // 组装选项
+    const opts = distractors.map(w => ({
+      text: w.meanings[0].definition,
+      correct: false
+    }));
+    opts.push({ text: correctDef.definition, correct: true });
+    shuffle(opts);
+
+    this.render(opts);
+    $('counter').textContent = `词库 ${lib.length} 词`;
+  },
+
+  render(opts) {
+    $('wordDisplay').textContent = this.current.spelling;
+    const box = $('options');
+    box.innerHTML = '';
+    opts.forEach((o, i) => {
+      const div = document.createElement('div');
+      div.className = 'option';
+      div.dataset.idx = i;
+      div.innerHTML = `<span class="text">${o.text}</span><span class="tag"></span>`;
+      div.onclick = () => this.select(i, div);
+      box.appendChild(div);
+    });
+    $('btnConfirm').disabled = true;
+    $('btnConfirm').textContent = '确定';
+    $('resultCard').classList.remove('show', 'correct', 'wrong');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  },
+
+  select(idx, el) {
+    if (this.answered) return;
+    this.selectedIndex = idx;
+    document.querySelectorAll('.option').forEach(o => o.classList.remove('selected'));
+    el.classList.add('selected');
+    $('btnConfirm').disabled = false;
+  },
+
+  confirm() {
+    if (this.answered || this.selectedIndex < 0) return;
+    this.answered = true;
+    const opts = document.querySelectorAll('.option');
+    const chosen = opts[this.selectedIndex];
+    const isCorrect = chosen.querySelector('.text').textContent === this.current.meanings[0].definition;
+
+    opts.forEach(o => o.classList.add('disabled'));
+
+    if (isCorrect) {
+      chosen.classList.add('correct');
+      chosen.querySelector('.tag').textContent = '✅';
+      this.showResult(true);
+    } else {
+      chosen.classList.add('wrong');
+      chosen.querySelector('.tag').textContent = '❌';
+      // 高亮正确项
+      opts.forEach(o => {
+        if (o.querySelector('.text').textContent === this.current.meanings[0].definition) {
+          o.classList.add('correct');
+          o.querySelector('.tag').textContent = '✅';
+        }
+      });
+      this.showResult(false);
+      Data.addWrong(this.current);
+    }
+    $('btnConfirm').style.display = 'none';
+    $('resultCard').classList.add('show');
+  },
+
+  showResult(correct) {
+    const card = $('resultCard');
+    card.classList.add(correct ? 'correct' : 'wrong');
+    $('resultHeader').textContent = correct ? '✅ 回答正确' : '❌ 回答错误';
+    $('resultHeader').className = 'result-header ' + (correct ? 'ok' : 'no');
+    $('rcWord').textContent = this.current.spelling;
+    // 释义
+    const meanBox = $('rcMeanings');
+    meanBox.innerHTML = '';
+    this.current.meanings.forEach(m => {
+      const d = document.createElement('div');
+      d.className = 'rc-meaning';
+      d.innerHTML = `<span class="pos">${m.partOfSpeech}</span>${m.definition}`;
+      meanBox.appendChild(d);
+    });
+    // 例句
+    const ex = $('rcExample');
+    if (this.current.example && this.current.example.english) {
+      ex.innerHTML = `<div class="en">${this.current.example.english}</div><div class="cn">${this.current.example.chinese || ''}</div>`;
+      ex.style.display = 'block';
+    } else {
+      ex.style.display = 'none';
+    }
+  }
+};
+
+/* ---------- 错题本 ---------- */
+function renderWrong() {
+  const list = Data.loadWrong();
+  const box = $('wrongList');
+  if (!list.length) {
+    box.innerHTML = '<div class="wrong-empty">暂无错题，继续加油！🎉</div>';
+    return;
+  }
+  box.innerHTML = '';
+  list.forEach(w => {
+    const def = w.meanings.map(m => `${m.partOfSpeech} ${m.definition}`).join('；');
+    const div = document.createElement('div');
+    div.className = 'wrong-item';
+    div.innerHTML = `
+      <div class="info">
+        <div class="w-word">${w.spelling}</div>
+        <div class="w-mean">${def}</div>
+      </div>
+      <button class="remove">移出</button>`;
+    div.querySelector('.remove').onclick = () => {
+      Data.removeWrong(w.spelling);
+      renderWrong();
+    };
+    box.appendChild(div);
+  });
+}
+
+/* ---------- Tab 切换 ---------- */
+function switchTab(tab) {
+  ['quiz', 'wrong', 'import'].forEach(t => {
+    $('page' + t.charAt(0).toUpperCase() + t.slice(1)).classList.remove('active');
+    document.querySelector(`.tab[data-tab="${t}"]`)?.classList.remove('active');
+  });
+  $('page' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add('active');
+  document.querySelector(`.tab[data-tab="${tab}"]`)?.classList.add('active');
+  if (tab === 'wrong') renderWrong();
+  if (tab === 'quiz') { $('pageTitle').textContent = '四级词汇极简刷题'; Quiz.start(); }
+  if (tab === 'import') { $('pageTitle').textContent = '导入词库'; checkLibraryStatus(); }
+}
+
+/* ---------- 导入流程 ---------- */
+function checkLibraryStatus() {
+  const lib = Data.loadLibrary();
+  const status = $('importStatus');
+  if (lib.length) {
+    status.textContent = `✅ 当前已加载 ${lib.length} 个单词，可继续导入新文件（会追加合并）。点击上方区域重新导入。`;
+    status.classList.add('show');
+  } else {
+    status.classList.remove('show');
+  }
+}
+
+async function handleFile(file) {
+  if (!file) return;
+  const status = $('importStatus');
+  status.classList.add('show');
+  status.textContent = '开始解析文件…';
+  try {
+    const words = await parseFileInChunks(file);
+    const valid = words.filter(normalizeWord);
+    if (!valid.length) { status.textContent = '⚠️ 未解析到有效单词，请检查文件格式。'; return; }
+    // 合并去重
+    const existing = Data.loadLibrary();
+    const map = new Map();
+    existing.forEach(w => map.set(w.spelling, w));
+    valid.forEach(w => map.set(w.spelling, w));
+    const merged = Array.from(map.values());
+    if (Data.saveLibrary(merged)) {
+      status.textContent = `✅ 导入完成！共 ${valid.length} 个新单词，词库合计 ${merged.length} 词。`;
+      // 回到刷词页
+      setTimeout(() => { switchTab('quiz'); }, 1200);
+    }
+  } catch (e) {
+    console.error(e);
+    status.textContent = '⚠️ 解析失败：' + e.message + '。请确认文件为合法 JSON/JSONL/TXT。';
+  }
+}
+
+/* ---------- 事件绑定 ---------- */
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.onclick = () => switchTab(tab.dataset.tab);
+});
+$('btnConfirm').onclick = () => Quiz.confirm();
+$('btnNext').onclick = () => {
+  $('btnConfirm').style.display = 'block';
+  Quiz.next();
+};
+$('importBox').onclick = () => $('fileInput').click();
+$('fileInput').onchange = (e) => handleFile(e.target.files[0]);
+$('formatToggle').onclick = () => $('formatDemo').classList.toggle('show');
+
+// 拖拽导入
+const box = $('importBox');
+['dragenter', 'dragover'].forEach(ev => box.addEventListener(ev, e => { e.preventDefault(); box.style.borderColor = 'var(--primary)'; }));
+['dragleave', 'drop'].forEach(ev => box.addEventListener(ev, e => { e.preventDefault(); box.style.borderColor = 'var(--border)'; }));
+box.addEventListener('drop', e => { if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]); });
+
+/* ---------- 启动 ---------- */
+(function init() {
+  if (!Data.loadLibrary().length) {
+    switchTab('import');
+  } else {
+    Quiz.start();
+  }
+})();
+</script>
+</body>
+</html>
