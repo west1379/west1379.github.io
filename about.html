@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>四级单词极简刷题</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:#fff; color:#1a237e; min-height:100vh; }
+
+/* 底部导航 */
+.nav { position:fixed; bottom:0; left:0; right:0; display:flex; border-top:1px solid #e0e0e0; background:#fff; z-index:100; }
+.nav button { flex:1; padding:14px 0; border:none; background:#fff; font-size:15px; color:#666; cursor:pointer; }
+.nav button.active { color:#1a237e; font-weight:700; border-top:2px solid #1a237e; }
+
+/* 页面容器 */
+.page { display:none; padding:20px 20px 80px; max-width:680px; margin:0 auto; }
+.page.active { display:block; }
+
+/* 刷题区 */
+.word-display { font-size:36px; font-weight:700; text-align:center; margin:30px 0 20px; }
+.options { display:flex; flex-direction:column; gap:12px; margin:20px 0; }
+.option { padding:16px 20px; border:2px solid #e0e0e0; border-radius:10px; font-size:18px; cursor:pointer; background:#fff; text-align:left; transition:0.15s; }
+.option:hover { border-color:#1a237e; }
+.option.selected { border-color:#1a237e; background:#e8eaf6; }
+.option.correct { border-color:#4caf50; background:#e8f5e9; }
+.option.wrong { border-color:#f44336; background:#fce4ec; }
+.option.locked { pointer-events:none; }
+
+#confirmBtn, #nextBtn { width:100%; padding:14px; font-size:16px; border:none; border-radius:10px; cursor:pointer; margin-top:10px; }
+#confirmBtn { background:#1a237e; color:#fff; display:none; }
+#nextBtn { background:#e8eaf6; color:#1a237e; display:none; }
+
+/* 结果卡片 */
+.result-card { margin-top:20px; padding:20px; background:#f5f5f5; border-radius:12px; display:none; }
+.result-card .judge { font-size:22px; font-weight:700; margin-bottom:10px; }
+.result-card .rc-word { font-size:28px; font-weight:700; margin-bottom:4px; }
+.result-card .rc-phonetic { color:#666; margin-bottom:8px; }
+.result-card .rc-mean { font-size:17px; margin-bottom:6px; }
+.result-card .rc-ex { font-size:14px; color:#555; line-height:1.6; margin-top:8px; padding-top:8px; border-top:1px solid #ddd; }
+
+/* 错题本 */
+.wrong-item { padding:14px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; }
+.wrong-item .wi-word { font-size:18px; font-weight:600; }
+.wrong-item .wi-mean { font-size:14px; color:#666; }
+.wrong-item button { padding:6px 14px; border:1px solid #f44336; background:#fff; color:#f44336; border-radius:6px; cursor:pointer; font-size:13px; }
+
+/* 导入区 */
+.import-box { margin-top:20px; padding:20px; border:2px dashed #ccc; border-radius:12px; text-align:center; }
+.import-box input { display:none; }
+.import-box label { display:block; padding:20px; cursor:pointer; color:#666; }
+
+/* 进度 */
+.progress { text-align:center; color:#999; font-size:13px; margin-top:10px; }
+</style>
+</head>
+<body>
+
+<!-- 刷词页 -->
+<div class="page active" id="page-study">
+  <div class="word-display" id="wordDisplay">加载中...</div>
+  <div class="options" id="optionsArea"></div>
+  <button id="confirmBtn">确 定</button>
+  <div class="result-card" id="resultCard"></div>
+  <button id="nextBtn">下一题 →</button>
+  <div class="progress" id="progress"></div>
+
+  <div class="import-box">
+    <label for="fileInput">📥 点击导入词库（JSONL），会覆盖内置词库</label>
+    <input type="file" id="fileInput" accept=".jsonl,.json,.txt">
+  </div>
+</div>
+
+<!-- 错题本页 -->
+<div class="page" id="page-wrong">
+  <h2 style="margin-bottom:16px">📌 错题本</h2>
+  <div id="wrongList"></div>
+</div>
+
+<!-- 底部导航 -->
+<div class="nav">
+  <button class="active" onclick="switchTab('study')">刷词</button>
+  <button onclick="switchTab('wrong')">错题本</button>
+</div>
+
+<script>
+/* ============================================================
+   内置词库（前200词，你后续把全部4500词粘进来替换这个数组即可）
+   格式：{spelling, meanings:[{partOfSpeech, definition}], example:{english, chinese}}
+   ============================================================ */
+const BUILTIN_WORDS = [
+{"spelling":"access","meanings":[{"partOfSpeech":"v","definition":"获取"},{"partOfSpeech":"n","definition":"接近，入口"},{"partOfSpeech":"n","definition":"通道，入口"}],"example":{"english":"","chinese":"访问控制"}},
+{"spelling":"project","meanings":[{"partOfSpeech":"n","definition":"工程；课题、作业"},{"partOfSpeech":"n","definition":"方案，工程"},{"partOfSpeech":"v","definition":"伸出"}],"example":{"english":"","chinese":"表现自己；突出自己"}},
+{"spelling":"intention","meanings":[{"partOfSpeech":"n","definition":"打算，意图"},{"partOfSpeech":"n","definition":"意图，意向，目的"}],"example":{"english":"","chinese":"初衷；原始意图"}},
+{"spelling":"equivalence","meanings":[{"partOfSpeech":"n","definition":"等值，相等"}],"example":{"english":"","chinese":"功能对等"}},
+{"spelling":"negotiate","meanings":[{"partOfSpeech":"v","definition":"谈判，协商，交涉"}],"example":{"english":"","chinese":"协商；谈判"}},
+{"spelling":"disappointing","meanings":[{"partOfSpeech":"adj","definition":"令人失望的"}],"example":{"english":"","chinese":""}},
+{"spelling":"alternative","meanings":[{"partOfSpeech":"n","definition":"代替品"},{"partOfSpeech":"n","definition":"替换物；取舍，抉择"}],"example":{"english":"","chinese":"替代能源；新能源"}},
+{"spelling":"generous","meanings":[{"partOfSpeech":"adj","definition":"慷慨的"},{"partOfSpeech":"adj","definition":"慷慨的；宽厚的"}],"example":{"english":"","chinese":"用…很大方"}},
+{"spelling":"biological","meanings":[{"partOfSpeech":"adj","definition":"生物的"}],"example":{"english":"","chinese":"生物学特性"}},
+{"spelling":"strategy","meanings":[{"partOfSpeech":"n","definition":"策略，战略"},{"partOfSpeech":"n","definition":"战略；策略"}],"example":{"english":"","chinese":"发展战略"}},
+{"spelling":"paradox","meanings":[{"partOfSpeech":"n","definition":"悖论；自相矛盾"}],"example":{"english":"","chinese":""}},
+{"spelling":"primary","meanings":[{"partOfSpeech":"adj","definition":"主要的，基本的"},{"partOfSpeech":"adj","definition":"基本的；最初的"}],"example":{"english":"","chinese":"小学"}},
+{"spelling":"standpoint","meanings":[{"partOfSpeech":"n","definition":"立场"}],"example":{"english":"","chinese":"从…角度来看；从…立场来看"}},
+{"spelling":"grab","meanings":[{"partOfSpeech":"v","definition":"抢先，抢占，抢夺"}],"example":{"english":"","chinese":"大家有份"}},
+{"spelling":"crucial","meanings":[{"partOfSpeech":"adj","definition":"至关重要的"}],"example":{"english":"","chinese":""}},
+{"spelling":"flaw","meanings":[{"partOfSpeech":"n","definition":"缺点；错误"}],"example":{"english":"","chinese":"探伤检验；缺陷检验"}},
+{"spelling":"depressed","meanings":[{"partOfSpeech":"adj","definition":"萧条的；沮丧的"}],"example":{"english":"","chinese":"萧条区，贫困地区"}},
+{"spelling":"obstacle","meanings":[{"partOfSpeech":"n","definition":"阻碍"},{"partOfSpeech":"n","definition":"障碍，妨害；障碍物"}],"example":{"english":"","chinese":"n. 超越障碍训练场"}},
+{"spelling":"automatic","meanings":[{"partOfSpeech":"adj","definition":"自动的"},{"partOfSpeech":"adj","definition":"自动的；机械的"}],"example":{"english":"","chinese":"自动控制"}},
+{"spelling":"passionate","meanings":[{"partOfSpeech":"adj","definition":"热情的"}],"example":{"english":"","chinese":"热情的爱；激情之爱"}},
+{"spelling":"gambling","meanings":[{"partOfSpeech":"n","definition":"赌博"}],"example":{"english":"","chinese":"赌债"}},
+{"spelling":"logic","meanings":[{"partOfSpeech":"n","definition":"逻辑"},{"partOfSpeech":"n","definition":"逻辑，推理；逻辑性"}],"example":{"english":"","chinese":"模糊逻辑"}},
+{"spelling":"theory","meanings":[{"partOfSpeech":"n","definition":"理论"}],"example":{"english":"","chinese":"理论上"}},
+{"spelling":"download","meanings":[{"partOfSpeech":"v","definition":"下载"}],"example":{"english":"","chinese":"下载链接"}},
+{"spelling":"signal","meanings":[{"partOfSpeech":"n","definition":"信号"},{"partOfSpeech":"v","definition":"发信号，打信号；示意"},{"partOfSpeech":"v","definition":"发信号"}],"example":{"english":"","chinese":"信号处理"}},
+{"spelling":"authoritative","meanings":[{"partOfSpeech":"adj","definition":"权威的"}],"example":{"english":"","chinese":"官方消息"}},
+{"spelling":"smooth","meanings":[{"partOfSpeech":"adj","definition":"光滑的"}],"example":{"english":"","chinese":"平滑肌"}},
+{"spelling":"institution","meanings":[{"partOfSpeech":"n","definition":"社会公共机构；制度；设立，制定"},{"partOfSpeech":"n","definition":"协会；制度，习俗"}],"example":{"english":"","chinese":"金融机构"}},
+{"spelling":"vehicle","meanings":[{"partOfSpeech":"n","definition":"车辆"},{"partOfSpeech":"n","definition":"车辆，机动车"}],"example":{"english":"","chinese":"汽车；机动车辆"}},
+{"spelling":"plague","meanings":[{"partOfSpeech":"v","definition":"使困扰"}],"example":{"english":"","chinese":"n. [医]黑死病"}},
+{"spelling":"psychological","meanings":[{"partOfSpeech":"adj","definition":"心理上的"},{"partOfSpeech":"adj","definition":"心理的，心理学的"}],"example":{"english":"","chinese":"心理素质"}},
+{"spelling":"shade","meanings":[{"partOfSpeech":"n","definition":"阴凉处"},{"partOfSpeech":"n","definition":"荫；遮光物"},{"partOfSpeech":"v","definition":"荫蔽"}],"example":{"english":"","chinese":"[口语]令人想起…的"}},
+{"spelling":"persistent","meanings":[{"partOfSpeech":"adj","definition":"持续的；坚持的"}],"example":{"english":"","chinese":"持久性有机污染物"}},
+{"spelling":"voluntary","meanings":[{"partOfSpeech":"adj","definition":"自愿的，主动的"},{"partOfSpeech":"adj","definition":"自愿的，志愿的"}],"example":{"english":"","chinese":"自愿捐款"}},
+{"spelling":"tolerance","meanings":[{"partOfSpeech":"n","definition":"宽容，容忍"},{"partOfSpeech":"n","definition":"忍受，容忍"}],"example":{"english":"","chinese":"容错，故障容差"}},
+{"spelling":"senior","meanings":[{"partOfSpeech":"n","definition":"老年人"},{"partOfSpeech":"adj","definition":"地位较高的"}],"example":{"english":"","chinese":"高中"}},
+{"spelling":"individual","meanings":[{"partOfSpeech":"n","definition":"个人"},{"partOfSpeech":"adj","definition":"个别的；独特的"}],"example":{"english":"","chinese":"个性；单字"}},
+{"spelling":"contemporary","meanings":[{"partOfSpeech":"adj","definition":"当代的，现代的"},{"partOfSpeech":"adj","definition":"当代的；同时代的"}],"example":{"english":"","chinese":"当代艺术"}},
+{"spelling":"opposite","meanings":[{"partOfSpeech":"adj","definition":"相反的"},{"partOfSpeech":"adj","definition":"对面的"},{"partOfSpeech":"n","definition":"对立物"}],"example":{"english":"","chinese":"相反方向；敌对方向"}},
+{"spelling":"specialize","meanings":[{"partOfSpeech":"v","definition":"专业从事"},{"partOfSpeech":"v","definition":"成为…专家；专攻"}],"example":{"english":"","chinese":"专门研究……"}},
+{"spelling":"content","meanings":[{"partOfSpeech":"n","definition":"内容"},{"partOfSpeech":"adj","definition":"满意的，满足的"}],"example":{"english":"","chinese":"主要内容"}},
+{"spelling":"philosopher","meanings":[{"partOfSpeech":"n","definition":"哲学家"}],"example":{"english":"","chinese":""}},
+{"spelling":"unrest","meanings":[{"partOfSpeech":"n","definition":"不安定，动荡"}],"example":{"english":"","chinese":"社会动荡；社会不安"}},
+{"spelling":"startle","meanings":[{"partOfSpeech":"v","definition":"吃惊"}],"example":{"english":"","chinese":""}},
+{"spelling":"emission","meanings":[{"partOfSpeech":"n","definition":"排放，辐射"}],"example":{"english":"","chinese":"声发射，声频发射；声发射检验"}},
+{"spelling":"overweight","meanings":[{"partOfSpeech":"adj","definition":"超重的"}],"example":{"english":"","chinese":""}},
+{"spelling":"occupation","meanings":[{"partOfSpeech":"n","definition":"职业，工作"},{"partOfSpeech":"n","definition":"职业；占领，占据"}],"example":{"english":"","chinese":"就业"}},
+{"spelling":"mainstream","meanings":[{"partOfSpeech":"n","definition":"主流"}],"example":{"english":"","chinese":""}},
+{"spelling":"scholarship","meanings":[{"partOfSpeech":"n","definition":"奖学金"}],"example":{"english":"","chinese":""}},
+{"spelling":"contract","meanings":[{"partOfSpeech":"n","definition":"合同"},{"partOfSpeech":"n","definition":"契约，合同"}],"example":{"english":"","chinese":"承包；与…订有合约"}},
+{"spelling":"cheek","meanings":[{"partOfSpeech":"n","definition":"脸颊"},{"partOfSpeech":"n","definition":"面颊，脸蛋"}],"example":{"english":"","chinese":"adv. 紧密地"}},
+{"spelling":"interdependence","meanings":[{"partOfSpeech":"n","definition":"相互依靠"}],"example":{"english":"","chinese":""}},
+{"spelling":"import","meanings":[{"partOfSpeech":"n","definition":"进口"},{"partOfSpeech":"v","definition":"进口"},{"partOfSpeech":"n","definition":"输入，进口"},{"partOfSpeech":"v","definition":"输入，进口"}],"example":{"english":"","chinese":"进出口；导入和导出；输入和输出"}},
+{"spelling":"fiction","meanings":[{"partOfSpeech":"n","definition":"小说，虚构的文学作品"},{"partOfSpeech":"n","definition":"小说；虚构，杜撰"}],"example":{"english":"","chinese":"科幻小说"}},
+{"spelling":"upbringing","meanings":[{"partOfSpeech":"n","definition":"养育，培养，教养"}],"example":{"english":"","chinese":""}},
+{"spelling":"preserve","meanings":[{"partOfSpeech":"v","definition":"保护"},{"partOfSpeech":"v","definition":"保护；保存；腌渍"}],"example":{"english":"","chinese":"保藏食物"}},
+{"spelling":"vitally","meanings":[{"partOfSpeech":"adv","definition":"极其重要地"}],"example":{"english":"","chinese":"极其重要的"}},
+{"spelling":"masculine","meanings":[{"partOfSpeech":"adj","definition":"男性的"}],"example":{"english":"","chinese":""}},
+{"spelling":"advocate","meanings":[{"partOfSpeech":"v","definition":"倡导"},{"partOfSpeech":"n","definition":"提倡者，拥护者，鼓吹者"}],"example":{"english":"","chinese":"故意持相反意见的人；故意唱反调的人"}},
+{"spelling":"dust","meanings":[{"partOfSpeech":"n","definition":"灰尘"},{"partOfSpeech":"n","definition":"尘土，灰尘"}],"example":{"english":"","chinese":"死了；入土"}},
+{"spelling":"track","meanings":[{"partOfSpeech":"n","definition":"足迹"},{"partOfSpeech":"v","definition":"追踪，〔循着踪迹、气味等〕找寻"},{"partOfSpeech":"n","definition":"行踪；路径；轨道"}],"example":{"english":"","chinese":"田径；田径赛"}},
+{"spelling":"confidence","meanings":[{"partOfSpeech":"n","definition":"信心"},{"partOfSpeech":"n","definition":"信任；信赖；信心"}],"example":{"english":"","chinese":"对……信任"}},
+{"spelling":"riotous","meanings":[{"partOfSpeech":"adj","definition":"狂暴的"}],"example":{"english":"","chinese":""}},
+{"spelling":"sophisticated","meanings":[{"partOfSpeech":"adj","definition":"复杂的；世故的"},{"partOfSpeech":"adj","definition":"老于世故的；高级的"}],"example":{"english":"","chinese":"工艺精良"}},
+{"spelling":"similar","meanings":[{"partOfSpeech":"adj","definition":"相似的"},{"partOfSpeech":"adj","definition":"相似的，类似的"}],"example":{"english":"","chinese":"按同样的方式"}},
+{"spelling":"transform","meanings":[{"partOfSpeech":"v","definition":"改变"},{"partOfSpeech":"v","definition":"改变；改造；变换"}],"example":{"english":"","chinese":"傅里叶变换"}},
+{"spelling":"approve","meanings":[{"partOfSpeech":"v","definition":"赞成，同意"},{"partOfSpeech":"v","definition":"批准；赞成，称许"}],"example":{"english":"","chinese":"[古语]证明为，表明为"}},
+{"spelling":"session","meanings":[{"partOfSpeech":"n","definition":"开会，会议"},{"partOfSpeech":"n","definition":"一段时间；会议"}],"example":{"english":"","chinese":"全体大会"}},
+{"spelling":"awareness","meanings":[{"partOfSpeech":"n","definition":"意识"}],"example":{"english":"","chinese":"意识到"}},
+{"spelling":"exhaust","meanings":[{"partOfSpeech":"v","definition":"使筋疲力尽"},{"partOfSpeech":"v","definition":"使筋疲力尽；用尽"}],"example":{"english":"","chinese":"废气"}},
+{"spelling":"subsidize","meanings":[{"partOfSpeech":"v","definition":"提供补贴"}],"example":{"english":"","chinese":""}},
+{"spelling":"grocery","meanings":[{"partOfSpeech":"n","definition":"杂货店"},{"partOfSpeech":"n","definition":"食品杂货店"}],"example":{"english":"","chinese":"杂货店"}},
+{"spelling":"ignorance","meanings":[{"partOfSpeech":"n","definition":"无知，愚昧"}],"example":{"english":"","chinese":""}},
+{"spelling":"intelligence","meanings":[{"partOfSpeech":"n","definition":"智力，智慧，理解力"},{"partOfSpeech":"n","definition":"智力；理解力；情报"}],"example":{"english":"","chinese":"人工智能"}},
+{"spelling":"tiny","meanings":[{"partOfSpeech":"adj","definition":"微小的"}],"example":{"english":"","chinese":"微小额"}},
+{"spelling":"praise","meanings":[{"partOfSpeech":"v","definition":"赞扬，赞美"},{"partOfSpeech":"n","definition":"赞扬，赞美"},{"partOfSpeech":"v","definition":"赞扬"}],"example":{"english":"","chinese":"歌颂；为赞扬"}},
+{"spelling":"memorize","meanings":[{"partOfSpeech":"v","definition":"熟记，牢记"}],"example":{"english":"","chinese":""}},
+{"spelling":"relative","meanings":[{"partOfSpeech":"adj","definition":"相对的"},{"partOfSpeech":"n","definition":"亲戚"},{"partOfSpeech":"adj","definition":"有关系的；相对的"}],"example":{"english":"","chinese":"相对湿度"}},
+{"spelling":"breakthrough","meanings":[{"partOfSpeech":"n","definition":"突破"}],"example":{"english":"","chinese":"突破点；穿透点；贯穿点"}},
+{"spelling":"incidence","meanings":[{"partOfSpeech":"n","definition":"几率，发生率"}],"example":{"english":"","chinese":"发生率，发病率"}},
+{"spelling":"scratch","meanings":[{"partOfSpeech":"n","definition":"抓，划痕"},{"partOfSpeech":"v","definition":"搔；抓"},{"partOfSpeech":"n","definition":"搔；抓"}],"example":{"english":"","chinese":"白手起家；从头做起"}},
+{"spelling":"harmful","meanings":[{"partOfSpeech":"adj","definition":"有害的"}],"example":{"english":"","chinese":"有害气体"}},
+{"spelling":"undergo","meanings":[{"partOfSpeech":"v","definition":"承受"},{"partOfSpeech":"v","definition":"经历，经受，忍受"}],"example":{"english":"","chinese":""}},
+{"spelling":"recession","meanings":[{"partOfSpeech":"n","definition":"衰退"}],"example":{"english":"","chinese":"经济衰退"}},
+{"spelling":"extraordinary","meanings":[{"partOfSpeech":"adj","definition":"非凡的"},{"partOfSpeech":"adj","definition":"非同寻常的；特别的（会议）"}],"example":{"english":"","chinese":"特别会员大会；非常股东大会"}},
+{"spelling":"improper","meanings":[{"partOfSpeech":"adj","definition":"不合适的，不适当的"}],"example":{"english":"","chinese":"包装不妥"}},
+{"spelling":"marginalize","meanings":[{"partOfSpeech":"v","definition":"边缘化，排斥"}],"example":{"english":"","chinese":""}},
+{"spelling":"vital","meanings":[{"partOfSpeech":"adj","definition":"重要的"},{"partOfSpeech":"adj","definition":"生命的；有生命力的"}],"example":{"english":"","chinese":"要害部位"}},
+{"spelling":"fortunately","meanings":[{"partOfSpeech":"adv","definition":"幸运地"},{"partOfSpeech":"adv","definition":"幸运地，幸亏"}],"example":{"english":"","chinese":""}},
+{"spelling":"commencement","meanings":[{"partOfSpeech":"n","definition":"毕业典礼"}],"example":{"english":"","chinese":"生效日期"}},
+{"spelling":"fetch","meanings":[{"partOfSpeech":"v","definition":"取回"},{"partOfSpeech":"v","definition":"拿来；请来，接去"}],"example":{"english":"","chinese":"引进，招来"}},
+{"spelling":"clumsy","meanings":[{"partOfSpeech":"adj","definition":"笨拙的，不圆滑的"},{"partOfSpeech":"adj","definition":"笨拙的；愚笨的"}],"example":{"english":"","chinese":""}},
+{"spelling":"establishment","meanings":[{"partOfSpeech":"n","definition":"确立"},{"partOfSpeech":"n","definition":"建立，设立，确立"}],"example":{"english":"","chinese":"恒久的设施"}},
+{"spelling":"emit","meanings":[{"partOfSpeech":"v","definition":"发出，排出"},{"partOfSpeech":"v","definition":"散发；发射；发表"}],"example":{"english":"","chinese":""}},
+{"spelling":"entertaining","meanings":[{"partOfSpeech":"adj","definition":"有趣的，使人愉快的"}],"example":{"english":"","chinese":"招待朋友"}},
+{"spelling":"irregular","meanings":[{"partOfSpeech":"adj","definition":"不规律的"},{"partOfSpeech":"adj","definition":"不规则的；不整齐的"}],"example":{"english":"","chinese":"月经不调"}},
+{"spelling":"psychologist","meanings":[{"partOfSpeech":"n","definition":"心理学家"}],"example":{"english":"","chinese":"临床心理学家"}},
+{"spelling":"era","meanings":[{"partOfSpeech":"n","definition":"纪元，年代"},{"partOfSpeech":"n","definition":"时代，年代；纪元"}],"example":{"english":"","chinese":"新纪元报"}},
+{"spelling":"triumph","meanings":[{"partOfSpeech":"n","definition":"胜利"},{"partOfSpeech":"n","definition":"凯旋；胜利"},{"partOfSpeech":"v","definition":"成功"}],"example":{"english":"","chinese":"胜利地；洋洋得意地；耀武扬威地"}},
+{"spelling":"detection","meanings":[{"partOfSpeech":"n","definition":"侦查；察觉"},{"partOfSpeech":"n","definition":"察觉，发觉；侦察"}],"example":{"english":"","chinese":"检测系统；探测系统"}},
+{"spelling":"cozy","meanings":[{"partOfSpeech":"adj","definition":"舒适的"}],"example":{"english":"","chinese":"奉承，取悦"}},
+{"spelling":"gallery","meanings":[{"partOfSpeech":"n","definition":"美术馆"},{"partOfSpeech":"n","definition":"美术馆，画廊；长廊；走廊"}],"example":{"english":"","chinese":"美术馆；画廊"}},
+{"spelling":"enormous","meanings":[{"partOfSpeech":"adj","definition":"巨大的"},{"partOfSpeech":"adj","definition":"巨大的，庞大的"}],"example":{"english":"","chinese":""}},
+{"spelling":"obtain","meanings":[{"partOfSpeech":"v","definition":"获得"},{"partOfSpeech":"v","definition":"获得，得到，买到"}],"example":{"english":"","chinese":"就业，找到工作"}},
+{"spelling":"desert","meanings":[{"partOfSpeech":"v","definition":"抛弃"},{"partOfSpeech":"n","definition":"沙漠"},{"partOfSpeech":"v","definition":"离弃；擅离"}],"example":{"english":"","chinese":"n. 荒岛"}},
+{"spelling":"aviate","meanings":[{"partOfSpeech":"v","definition":"驾驶飞机"}],"example":{"english":"","chinese":""}},
+{"spelling":"determine","meanings":[{"partOfSpeech":"v","definition":"决定；下决心"},{"partOfSpeech":"v","definition":"查明；决定；决心"}],"example":{"english":"","chinese":""}},
+{"spelling":"disappear","meanings":[{"partOfSpeech":"v","definition":"不见，消失"},{"partOfSpeech":"v","definition":"消失；不见；失踪"}],"example":{"english":"","chinese":"从…处消失"}},
+{"spelling":"entitle","meanings":[{"partOfSpeech":"v","definition":"使具有权利，使具有资格"},{"partOfSpeech":"v","definition":"给…权利（或资格）"}],"example":{"english":"","chinese":""}},
+{"spelling":"relieve","meanings":[{"partOfSpeech":"v","definition":"解除，减轻，缓解"},{"partOfSpeech":"v","definition":"减轻；解除"}],"example":{"english":"","chinese":"v. 大小便"}},
+{"spelling":"generosity","meanings":[{"partOfSpeech":"n","definition":"慷慨，大方"}],"example":{"english":"","chinese":""}},
+{"spelling":"colleague","meanings":[{"partOfSpeech":"n","definition":"同事"},{"partOfSpeech":"n","definition":"同事，同僚"}],"example":{"english":"","chinese":""}},
+{"spelling":"undertake","meanings":[{"partOfSpeech":"v","definition":"承担"},{"partOfSpeech":"v","definition":"从事；承担；保证"}],"example":{"english":"","chinese":""}},
+{"spelling":"convenient","meanings":[{"partOfSpeech":"adj","definition":"方便的"},{"partOfSpeech":"adj","definition":"便利的；近便的"}],"example":{"english":"","chinese":"adj. 便于…"}},
+{"spelling":"preferentially","meanings":[{"partOfSpeech":"adv","definition":"优先地"}],"example":{"english":"","chinese":""}},
+{"spelling":"column","meanings":[{"partOfSpeech":"n","definition":"专栏"},{"partOfSpeech":"n","definition":"柱，支柱，圆柱"}],"example":{"english":"","chinese":"柱层析法；柱色谱法"}},
+{"spelling":"affectionate","meanings":[{"partOfSpeech":"adj","definition":"深情的，柔情的"}],"example":{"english":"","chinese":""}},
+{"spelling":"issue","meanings":[{"partOfSpeech":"v","definition":"发表〔声明〕"},{"partOfSpeech":"n","definition":"问题"},{"partOfSpeech":"n","definition":"问题；发行"},{"partOfSpeech":"v","definition":"发行"}],"example":{"english":"","chinese":"v. 导致"}},
+{"spelling":"inquire","meanings":[{"partOfSpeech":"v","definition":"询问"},{"partOfSpeech":"v","definition":"打听，询问；调查"}],"example":{"english":"","chinese":"调查，探究"}},
+{"spelling":"groundlessly","meanings":[{"partOfSpeech":"adv","definition":"无缘无故地，无根据地"}],"example":{"english":"","chinese":""}},
+{"spelling":"independently","meanings":[{"partOfSpeech":"adv","definition":"独立地"}],"example":{"english":"","chinese":"独立于…之外；与…无关"}},
+{"spelling":"approach","meanings":[{"partOfSpeech":"v","definition":"靠近"},{"partOfSpeech":"n","definition":"方法"},{"partOfSpeech":"v","definition":"向…靠近"},{"partOfSpeech":"n","definition":"靠近"}],"example":{"english":"","chinese":"新方案；新做法"}},
+{"spelling":"administration","meanings":[{"partOfSpeech":"n","definition":"管理；〔某一时期的〕政府"},{"partOfSpeech":"n","definition":"管理；管理部门"}],"example":{"english":"","chinese":"◎(法律、惩罚等的)施行，执行，实行，实施；(药的)服用；用法；给与；(庄严的誓言或诺言的)提出，宣誓"}},
+{"spelling":"adversity","meanings":[{"partOfSpeech":"n","definition":"逆境，不幸"}],"example":{"english":"","chinese":""}},
+{"spelling":"technician","meanings":[{"partOfSpeech":"n","definition":"技术员，技师"}],"example":{"english":"","chinese":"修理行业的技术人员"}},
+{"spelling":"regular","meanings":[{"partOfSpeech":"adj","definition":"有规律的，经常的"},{"partOfSpeech":"adj","definition":"规则的；整齐的"}],"example":{"english":"","chinese":"定期地；经常地"}},
+{"spelling":"miscalculation","meanings":[{"partOfSpeech":"n","definition":"算错，误算"}],"example":{"english":"","chinese":""}},
+{"spelling":"hinder","meanings":[{"partOfSpeech":"v","definition":"阻碍"}],"example":{"english":"","chinese":""}},
+{"spelling":"selection","meanings":[{"partOfSpeech":"n","definition":"选择，挑选"}],"example":{"english":"","chinese":"自然选择；[生]物竞天择说"}},
+{"spelling":"tide","meanings":[{"partOfSpeech":"n","definition":"潮水"},{"partOfSpeech":"n","definition":"潮，潮汐；潮流"}],"example":{"english":"","chinese":"大潮；涨潮"}},
+{"spelling":"superior","meanings":[{"partOfSpeech":"adj","definition":"上级的，较高的"},{"partOfSpeech":"n","definition":"上级，长官"},{"partOfSpeech":"adj","definition":"有优越感的；较高的"}],"example":{"english":"","chinese":"优质，上等品；高级货品"}},
+{"spelling":"matter","meanings":[{"partOfSpeech":"v","definition":"要紧，重要"},{"partOfSpeech":"n","definition":"事情；物质"},{"partOfSpeech":"v","definition":"要紧"}],"example":{"english":"","chinese":"不论怎样；不要紧"}},
+{"spelling":"passively","meanings":[{"partOfSpeech":"adv","definition":"消极地"}],"example":{"english":"","chinese":""}},
+{"spelling":"grant","meanings":[{"partOfSpeech":"v","definition":"授予；允许"},{"partOfSpeech":"n","definition":"授给物"},{"partOfSpeech":"v","definition":"授予"}],"example":{"english":"","chinese":"认为…理所当然"}},
+{"spelling":"liberation","meanings":[{"partOfSpeech":"n","definition":"解放"}],"example":{"english":"","chinese":"解放战争"}},
+{"spelling":"observe","meanings":[{"partOfSpeech":"v","definition":"遵守"},{"partOfSpeech":"v","definition":"看到；遵守；说"}],"example":{"english":"","chinese":"评论"}},
+{"spelling":"institute","meanings":[{"partOfSpeech":"v","definition":"建立"},{"partOfSpeech":"n","definition":"〔从事科研或教育等的〕机构；学院；研究院"},{"partOfSpeech":"n","definition":"研究所；学院"}],"example":{"english":"","chinese":"研究机构，研究所"}},
+{"spelling":"dormitory","meanings":[{"partOfSpeech":"n","definition":"宿舍"},{"partOfSpeech":"n","definition":"集体寝室；宿舍"}],"example":{"english":"","chinese":"宿舍大楼"}},
+{"spelling":"awful","meanings":[{"partOfSpeech":"adj","definition":"可怕的，骇人的"},{"partOfSpeech":"adj","definition":"令人不愉快的"}],"example":{"english":"","chinese":"◎经常"}},
+{"spelling":"emergency","meanings":[{"partOfSpeech":"n","definition":"紧急情况"},{"partOfSpeech":"n","definition":"紧急情况，突然事件"}],"example":{"english":"","chinese":"在紧急情况下"}},
+{"spelling":"stress","meanings":[{"partOfSpeech":"n","definition":"压力；重音"},{"partOfSpeech":"v","definition":"着重"}],"example":{"english":"","chinese":"对…的强调"}},
+{"spelling":"launch","meanings":[{"partOfSpeech":"v","definition":"发动"},{"partOfSpeech":"v","definition":"发射，投射；发动"}],"example":{"english":"","chinese":"运载火箭"}},
+{"spelling":"suppose","meanings":[{"partOfSpeech":"v","definition":"料想，以为；假定；期望"},{"partOfSpeech":"v","definition":"猜想；假定"}],"example":{"english":"","chinese":""}},
+{"spelling":"remove","meanings":[{"partOfSpeech":"v","definition":"消除，移除"},{"partOfSpeech":"v","definition":"移动，搬开；脱掉"}],"example":{"english":"","chinese":"[戏谑语]挪动挪动;走开,离开"}},
+{"spelling":"exposure","meanings":[{"partOfSpeech":"n","definition":"暴露；揭露"},{"partOfSpeech":"n","definition":"暴露；揭露；曝光"}],"example":{"english":"","chinese":"曝光时间"}},
+{"spelling":"promote","meanings":[{"partOfSpeech":"v","definition":"促进，提升；推销"},{"partOfSpeech":"v","definition":"促进，发扬；提升"}],"example":{"english":"","chinese":"促销；推销商品"}},
+{"spelling":"engage","meanings":[{"partOfSpeech":"v","definition":"从事；吸引"},{"partOfSpeech":"v","definition":"使从事于；聘用"}],"example":{"english":"","chinese":"从事于（参加）"}},
+{"spelling":"uncertain","meanings":[{"partOfSpeech":"adj","definition":"不确定的"}],"example":{"english":"","chinese":"对…不能肯定"}},
+{"spelling":"accommodate","meanings":[{"partOfSpeech":"v","definition":"为…提供住宿"},{"partOfSpeech":"v","definition":"容纳；供应，供给，提供住宿"}],"example":{"english":"","chinese":"向…供应；提供；以…供应"}},
+{"spelling":"slave","meanings":[{"partOfSpeech":"n","definition":"奴隶"}],"example":{"english":"","chinese":""}},
+{"spelling":"mature","meanings":[{"partOfSpeech":"adj","definition":"成熟的"},{"partOfSpeech":"v","definition":"使成熟"}],"example":{"english":"","chinese":"成熟的市场"}},
+{"spelling":"contrast","meanings":[{"partOfSpeech":"n","definition":"对照物"},{"partOfSpeech":"v","definition":"对比"},{"partOfSpeech":"n","definition":"对比，对照，悬殊"}],"example":{"english":"","chinese":"与此相反；比较起来"}},
+{"spelling":"clinic","meanings":[{"partOfSpeech":"n","definition":"诊所"}],"example":{"english":"","chinese":"牙科诊所，牙科诊室；牙科门诊部"}},
+{"spelling":"award","meanings":[{"partOfSpeech":"v","definition":"授予；判给"},{"partOfSpeech":"n","definition":"奖(金)"},{"partOfSpeech":"n","definition":"奖，奖品"}],"example":{"english":"","chinese":"奥斯卡金像奖；学院奖"}},
+{"spelling":"worthwhile","meanings":[{"partOfSpeech":"adj","definition":"有价值的"},{"partOfSpeech":"adj","definition":"值得花时间的"}],"example":{"english":"","chinese":""}},
+{"spelling":"cruelty","meanings":[{"partOfSpeech":"n","definition":"残暴，残酷"}],"example":{"english":"","chinese":""}},
+{"spelling":"threaten","meanings":[{"partOfSpeech":"v","definition":"威胁"},{"partOfSpeech":"v","definition":"威胁，恐吓"}],"example":{"english":"","chinese":""}},
+{"spelling":"chemical","meanings":[{"partOfSpeech":"adj","definition":"化学的"},{"partOfSpeech":"n","definition":"化学制品"}],"example":{"english":"","chinese":"化学工业"}},
+{"spelling":"consistent","meanings":[{"partOfSpeech":"adj","definition":"一致的"},{"partOfSpeech":"adj","definition":"坚持的，一贯的"}],"example":{"english":"","chinese":"符合；与…一致"}},
+{"spelling":"renew","meanings":[{"partOfSpeech":"v","definition":"〔中止后〕重新开始，继续"},{"partOfSpeech":"v","definition":"使更新"}],"example":{"english":"","chinese":""}},
+{"spelling":"takeoff","meanings":[{"partOfSpeech":"n","definition":"起飞"}],"example":{"english":"","chinese":""}},
+{"spelling":"innocent","meanings":[{"partOfSpeech":"adj","definition":"无辜的；天真的"},{"partOfSpeech":"adj","definition":"清白的；幼稚的"}],"example":{"english":"","chinese":"无罪的，清白的"}},
+{"spelling":"currently","meanings":[{"partOfSpeech":"adv","definition":"当前；一般地"}],"example":{"english":"","chinese":""}},
+{"spelling":"dropout","meanings":[{"partOfSpeech":"n","definition":"辍学者"}],"example":{"english":"","chinese":"辍学"}},
+{"spelling":"replace","meanings":[{"partOfSpeech":"v","definition":"代替"}],"example":{"english":"","chinese":"替换为；以…代替"}},
+{"spelling":"sightseeing","meanings":[{"partOfSpeech":"n","definition":"观光"},{"partOfSpeech":"n","definition":"观光，游览"}],"example":{"english":"","chinese":"去观光"}},
+{"spelling":"honor","meanings":[{"partOfSpeech":"n","definition":"荣誉；崇敬，敬重，敬意"}],"example":{"english":"","chinese":"无上的荣誉，殊荣"}},
+{"spelling":"imitate","meanings":[{"partOfSpeech":"v","definition":"模仿"},{"partOfSpeech":"v","definition":"模仿；仿效；仿制"}],"example":{"english":"","chinese":""}},
+{"spelling":"installment","meanings":[{"partOfSpeech":"n","definition":"分期付款"}],"example":{"english":"","chinese":"n. 分期付款方式"}},
+{"spelling":"personality","meanings":[{"partOfSpeech":"n","definition":"个性，性格"}],"example":{"english":"","chinese":"健康人格；健全人格"}},
+{"spelling":"headquarter","meanings":[{"partOfSpeech":"v","definition":"设立总部"}],"example":{"english":"","chinese":""}},
+{"spelling":"ingredient","meanings":[{"partOfSpeech":"n","definition":"成分，原料"}],"example":{"english":"","chinese":"有效成分；活性组分"}},
+{"spelling":"revenue","meanings":[{"partOfSpeech":"n","definition":"收入"}],"example":{"english":"","chinese":"税收；赋税收入"}},
+{"spelling":"sensitive","meanings":[{"partOfSpeech":"adj","definition":"敏感的"},{"partOfSpeech":"adj","definition":"敏感的；灵敏的"}],"example":{"english":"","chinese":"敏感性皮肤"}},
+{"spelling":"particular","meanings":[{"partOfSpeech":"adj","definition":"特别的，特指的；讲究的"},{"partOfSpeech":"adj","definition":"特定的；特殊的"}],"example":{"english":"","chinese":"尤其，特别"}},
+{"spelling":"tumor","meanings":[{"partOfSpeech":"n","definition":"瘤"}],"example":{"english":"","chinese":"[医]恶性肿瘤"}},
+{"spelling":"consequence","meanings":[{"partOfSpeech":"n","definition":"结果，成果"},{"partOfSpeech":"n","definition":"结果，后果"}],"example":{"english":"","chinese":"因此，结果"}},
+{"spelling":"explicitly","meanings":[{"partOfSpeech":"adv","definition":"直接地，明确地"}],"example":{"english":"","chinese":""}},
+{"spelling":"sway","meanings":[{"partOfSpeech":"v","definition":"影响"},{"partOfSpeech":"v","definition":"摇动"}],"example":{"english":"","chinese":"在…支配之下"}},
+{"spelling":"technical","meanings":[{"partOfSpeech":"adj","definition":"技术的"},{"partOfSpeech":"adj","definition":"技术的，工艺的"}],"example":{"english":"","chinese":"技术支持；技术援助"}},
+{"spelling":"expert","meanings":[{"partOfSpeech":"adj","definition":"熟练的，内行的"},{"partOfSpeech":"n","definition":"专家"},{"partOfSpeech":"adj","definition":"熟练的"}],"example":{"english":"","chinese":"专家系统"}},
+{"spelling":"harm","meanings":[{"partOfSpeech":"n","definition":"损害；危害；伤害"},{"partOfSpeech":"v","definition":"伤害，损害"},{"partOfSpeech":"n","definition":"伤害，损害"},{"partOfSpeech":"v","definition":"损害"}],"example":{"english":"","chinese":"加害某人"}},
+{"spelling":"imaginary","meanings":[{"partOfSpeech":"adj","definition":"虚构的，想象的"},{"partOfSpeech":"adj","definition":"想象中的，假想的"}],"example":{"english":"","chinese":"[计]虚部"}},
+{"spelling":"contaminate","meanings":[{"partOfSpeech":"v","definition":"污染，弄脏"}],"example":{"english":"","chinese":""}},
+{"spelling":"soar","meanings":[{"partOfSpeech":"v","definition":"猛增"}],"example":{"english":"","chinese":""}},
+{"spelling":"solely","meanings":[{"partOfSpeech":"adv","definition":"单独地，唯一地"}],"example":{"english":"","chinese":""}},
+{"spelling":"tremendous","meanings":[{"partOfSpeech":"adj","definition":"巨大的"},{"partOfSpeech":"adj","definition":"极大的，非常的"}],"example":{"english":"","chinese":""}},
+{"spelling":"civilization","meanings":[{"partOfSpeech":"n","definition":"文明"},{"partOfSpeech":"n","definition":"文明，文化；开化"}],"example":{"english":"","chinese":"精神文明"}},
+{"spelling":"tough","meanings":[{"partOfSpeech":"adj","definition":"困难的"},{"partOfSpeech":"adj","definition":"坚韧的；健壮的"}],"example":{"english":"","chinese":"[美口]硬汉"}},
+{"spelling":"gift","meanings":[{"partOfSpeech":"n","definition":"礼物；天赋"},{"partOfSpeech":"n","definition":"礼物，赠品；天赋"}],"example":{"english":"","chinese":"礼品盒；礼物盒；彩盒"}},
+{"spelling":"scale","meanings":[{"partOfSpeech":"n","definition":"规模；比例"},{"partOfSpeech":"n","definition":"天平，磅秤，秤"}],"example":{"english":"","chinese":"adj. 大规模的；大型的"}},
+{"spelling":"injure","meanings":[{"partOfSpeech":"v","definition":"使受伤"},{"partOfSpeech":"v","definition":"伤害，损害，损伤"}],"example":{"english":"","chinese":""}},
+{"spelling":"embrace","meanings":[{"partOfSpeech":"v","definition":"拥抱；欣然接受"},{"partOfSpeech":"v","definition":"拥抱；包括"}],"example":{"english":"","chinese":"温暖的拥抱"}},
+{"spelling":"seldom","meanings":[{"partOfSpeech":"adv","definition":"很少，罕见"}],"example":{"english":"","chinese":"他简直可以说滴酒不沾"}},
+{"spelling":"performance","meanings":[{"partOfSpeech":"n","definition":"演出；履行；表现"},{"partOfSpeech":"n","definition":"演出；表现；履行"}],"example":{"english":"","chinese":"高性能；高效能的"}},
+{"spelling":"violate","meanings":[{"partOfSpeech":"v","definition":"违反"}],"example":{"english":"","chinese":""}},
+{"spelling":"associate","meanings":[{"partOfSpeech":"v","definition":"把……联系起来；交往"},{"partOfSpeech":"v","definition":"交往"},{"partOfSpeech":"n","definition":"伙伴，同事"}],"example":{"english":"","chinese":"副教授"}},
+{"spelling":"privacy","meanings":[{"partOfSpeech":"n","definition":"隐私"}],"example":{"english":"","chinese":"隐私权政策；隐私策略"}},
+{"spelling":"choke","meanings":[{"partOfSpeech":"v","definition":"使窒息"},{"partOfSpeech":"v","definition":"使窒息；塞满"}],"example":{"english":"","chinese":"瓶颈；阻碍"}},
+{"spelling":"capable","meanings":[{"partOfSpeech":"adj","definition":"能干的，有能力的"},{"partOfSpeech":"adj","definition":"有能力的；有才能的"}],"example":{"english":"","chinese":"有…能力的；可…的"}},
+{"spelling":"appeal","meanings":[{"partOfSpeech":"n","definition":"呼吁"},{"partOfSpeech":"v","definition":"吸引；呼吁；恳请"},{"partOfSpeech":"n","definition":"呼吁；申述"},{"partOfSpeech":"v","definition":"呼吁；申述"}],"example":{"english":"","chinese":"vt. 恳求，请求；要求"}},
+{"spelling":"careless","meanings":[{"partOfSpeech":"adj","definition":"粗心的"},{"partOfSpeech":"adj","definition":"粗心的；漫不经心的"}],"example":{"english":"","chinese":"不顾；不关心"}},
+{"spelling":"hit","meanings":[{"partOfSpeech":"n","definition":"成功；命中，击中"},{"partOfSpeech":"v","definition":"打；碰撞"},{"partOfSpeech":"n","definition":"击"}],"example":{"english":"","chinese":"击球；顺利，成功"}},
+{"spelling":"swallow","meanings":[{"partOfSpeech":"v","definition":"咽下，吞下"},{"partOfSpeech":"n","definition":"燕子"}],"example":{"english":"","chinese":"淹没；吞下去；耗尽"}},
+{"spelling":"consult","meanings":[{"partOfSpeech":"v","definition":"咨询"},{"partOfSpeech":"v","definition":"请教；查阅"}],"example":{"english":"","chinese":"商量，协商"}},
+{"spelling":"preservation","meanings":[{"partOfSpeech":"n","definition":"保存，保留"}],"example":{"english":"","chinese":"保温"}},
+{"spelling":"distance","meanings":[{"partOfSpeech":"n","definition":"距离"},{"partOfSpeech":"n","definition":"距离，间距；远处"}],"example":{"english":"","chinese":"在远处"}},
+{"spelling":"plastic","meanings":[{"partOfSpeech":"adj","definition":"塑料的"},{"partOfSpeech":"adj","definition":"可塑的"},{"partOfSpeech":"n","definition":"塑料"}],"example":{"english":"","chinese":"[化]塑性变形"}},
+{"spelling":"predict","meanings":[{"partOfSpeech":"v","definition":"预言，预测"},{"partOfSpeech":"v","definition":"预言，预告，预测"}],"example":{"english":"","chinese":""}},
+{"spelling":"submit","meanings":[{"partOfSpeech":"v","definition":"提交"},{"partOfSpeech":"v","definition":"服从"}],"example":{"english":"","chinese":"提交登记表；提交注册"}},
+{"spelling":"entertainment","meanings":[{"partOfSpeech":"n","definition":"娱乐"}],"example":{"english":"","chinese":"娱乐业"}},
+{"spelling":"critical","meanings":[{"partOfSpeech":"adj","definition":"批评的，爱挑剔的"},{"partOfSpeech":"adj","definition":"批评的；决定性的"}],"example":{"english":"","chinese":"临界点"}},
+{"spelling":"transaction","meanings":[{"partOfSpeech":"n","definition":"交易，业务，事务"}],"example":{"english":"","chinese":"交易成本，交易费用"}},
+{"spelling":"via","meanings":[{"partOfSpeech":"prep","definition":"通过"},{"partOfSpeech":"prep","definition":"经过；通过"}],"example":{"english":"","chinese":""}},
+{"spelling":"insist","meanings":[{"partOfSpeech":"v","definition":"主张，坚持"},{"partOfSpeech":"v","definition":"坚持；坚持要求"}],"example":{"english":"","chinese":"坚持，坚决要求"}},
+{"spelling":"distract","meanings":[{"partOfSpeech":"v","definition":"分心"}],"example":{"english":"","chinese":"转移；使从…分心"}},
+{"spelling":"subdivision","meanings":[{"partOfSpeech":"n","definition":"分支; 分部"}],"example":{"english":"","chinese":""}},
+{"spelling":"yield","meanings":[{"partOfSpeech":"v","definition":"产生，得出"},{"partOfSpeech":"n","definition":"产量"},{"partOfSpeech":"v","definition":"出产"}],"example":{"english":"","chinese":"高产；高收益"}},
+{"spelling":"misunderstand","meanings":[{"partOfSpeech":"v","definition":"误解"},{"partOfSpeech":"v","definition":"误解，误会，曲解"}],"example":{"english":"","chinese":""}},
+{"spelling":"detail","meanings":[{"partOfSpeech":"n","definition":"细节"},{"partOfSpeech":"n","definition":"细节；枝节"}],"example":{"english":"","chinese":"详细地"}},
+{"spelling":"immeasurable","meanings":[{"partOfSpeech":"adj","definition":"无法估量的"}],"example":{"english":"","chinese":""}},
+{"spelling":"convincing","meanings":[{"partOfSpeech":"adj","definition":"令人信服的"}],"example":{"english":"","chinese":"令人信服的证据"}},
+{"spelling":"donate","meanings":[{"partOfSpeech":"v","definition":"捐赠"}],"example":{"english":"","chinese":"捐款"}},
+{"spelling":"compare","meanings":[{"partOfSpeech":"v","definition":"比较，对照"},{"partOfSpeech":"v","definition":"比较，对照；比作"}],"example":{"english":"","chinese":"与…相比较"}},
+{"spelling":"item","meanings":[{"partOfSpeech":"n","definition":"一项，一件，一条"},{"partOfSpeech":"n","definition":"一项，一件，一条"}],"example":{"english":"","chinese":"[计]菜单项"}},
+{"spelling":"concrete","meanings":[{"partOfSpeech":"adj","definition":"具体的"},{"partOfSpeech":"n","definition":"混凝土；具体物"}],"example":{"english":"","chinese":"n. 钢筋混凝土"}},
+{"spelling":"govern","meanings":[{"partOfSpeech":"v","definition":"管理，支配"},{"partOfSpeech":"v","definition":"统治，治理；支配"}],"example":{"english":"","chinese":""}},
+{"spelling":"classify","meanings":[{"partOfSpeech":"v","definition":"把…分类"},{"partOfSpeech":"v","definition":"把…分类"}],"example":{"english":"","chinese":"把…分类为…"}},
+{"spelling":"restrict","meanings":[{"partOfSpeech":"v","definition":"限制，限定"},{"partOfSpeech":"v","definition":"限制，限定；约束"}],"example":{"english":"","chinese":""}},
+{"spelling":"establish","meanings":[{"partOfSpeech":"v","definition":"建立，创办，设立"},{"partOfSpeech":"v","definition":"建立，设立；确立"}],"example":{"english":"","chinese":"在…落户"}},
+{"spelling":"counseling","meanings":[{"partOfSpeech":"n","definition":"咨询服务"}],"example":{"english":"","chinese":"心理咨询；心理辅导"}},
+{"spelling":"majority","meanings":[{"partOfSpeech":"n","definition":"多数"},{"partOfSpeech":"n","definition":"多数，大多数"}],"example":{"english":"","chinese":"大多数；大部分"}},
+{"spelling":"contact","meanings":[{"partOfSpeech":"n","definition":"联系，接触"},{"partOfSpeech":"v","definition":"联系〔某人〕"},{"partOfSpeech":"v","definition":"与…联系"}],"example":{"english":"","chinese":"联系我们；联络我们"}},
+{"spelling":"virtual","meanings":[{"partOfSpeech":"adj","definition":"虚拟的"}],"example":{"english":"","chinese":"虚拟现实"}},
+{"spelling":"simplicity","meanings":[{"partOfSpeech":"n","definition":"简单"},{"partOfSpeech":"n","definition":"简单，简易；朴素"}],"example":{"english":"","chinese":"为简单起见"}},
+{"spelling":"enrollment","meanings":[{"partOfSpeech":"n","definition":"入学人数"}],"example":{"english":"","chinese":"入学注册"}},
+{"spelling":"programming","meanings":[{"partOfSpeech":"n","definition":"程序设计；程序；节目"}],"example":{"english":"","chinese":"n. 线性规划"}},
+{"spelling":"device","meanings":[{"partOfSpeech":"n","definition":"装置，设备"},{"partOfSpeech":"n","definition":"器械，装置"}],"example":{"english":"","chinese":"控制装置，控制器"}},
+{"spelling":"previous","meanings":[{"partOfSpeech":"adj","definition":"之前的"},{"partOfSpeech":"adj","definition":"先的；前的"}],"example":{"english":"","chinese":"前一年"}},
+{"spelling":"alter","meanings":[{"partOfSpeech":"v","definition":"改变"},{"partOfSpeech":"v","definition":"改变，变更；改做"}],"example":{"english":"","chinese":"n. 密友"}},
+{"spelling":"coach","meanings":[{"partOfSpeech":"n","definition":"教练"},{"partOfSpeech":"v","definition":"当…的教练，训练"},{"partOfSpeech":"n","definition":"长途公共汽车"}],"example":{"english":"","chinese":"主教练；总教练"}},
+{"spelling":"crisis","meanings":[{"partOfSpeech":"n","definition":"危机"},{"partOfSpeech":"n","definition":"危机；存亡之际"}],"example":{"english":"","chinese":"金融危机；财政危机"}},
+{"spelling":"interconnect","meanings":[{"partOfSpeech":"v","definition":"相互联系"}],"example":{"english":"","chinese":""}},
+{"spelling":"enrich","meanings":[{"partOfSpeech":"v","definition":"丰富；使富有"}],"example":{"english":"","chinese":""}},
+{"spelling":"poll","meanings":[{"partOfSpeech":"n","definition":"民意调查"}],"example":{"english":"","chinese":"民意测验；选举投票"}},
+{"spelling":"consent","meanings":[{"partOfSpeech":"v","definition":"允许，同意"},{"partOfSpeech":"n","definition":"同意，赞同"},{"partOfSpeech":"n","definition":"同意，赞成"},{"partOfSpeech":"v","definition":"同意"}],"example":{"english":"","chinese":"知情同意"}},
+{"spelling":"utility","meanings":[{"partOfSpeech":"n","definition":"公用事业"},{"partOfSpeech":"n","definition":"效用，有用，实用"}],"example":{"english":"","chinese":"实用新型"}},
+{"spelling":"poisonous","meanings":[{"partOfSpeech":"adj","definition":"有毒的，有害的"}],"example":{"english":"","chinese":"毒气；有毒气体"}},
+{"spelling":"collision","meanings":[{"partOfSpeech":"n","definition":"冲突，抵触"},{"partOfSpeech":"n","definition":"碰撞；冲突"}],"example":{"english":"","chinese":"[计]碰撞检测"}},
+{"spelling":"rank","meanings":[{"partOfSpeech":"v","definition":"具有…等级"},{"partOfSpeech":"n","definition":"衔，阶层"},{"partOfSpeech":"n","definition":"排，横行；社会阶层"}],"example":{"english":"","chinese":"当兵，当战士"}},
+{"spelling":"fundamentally","meanings":[{"partOfSpeech":"adv","definition":"根本上"}],"example":{"english":"","chinese":""}},
+{"spelling":"inflation","meanings":[{"partOfSpeech":"n","definition":"通货膨胀"}],"example":{"english":"","chinese":"通货膨胀率"}},
+{"spelling":"secure","meanings":[{"partOfSpeech":"v","definition":"确保……安全"},{"partOfSpeech":"adj","definition":"安心的；安全的"}],"example":{"english":"","chinese":"保密通信；安全通信"}},
+{"spelling":"interpret","meanings":[{"partOfSpeech":"v","definition":"解释"},{"partOfSpeech":"v","definition":"口译；解释，说明"}],"example":{"english":"","chinese":"解释权"}},
+{"spelling":"criticize","meanings":[{"partOfSpeech":"v","definition":"批评；评论"},{"partOfSpeech":"v","definition":"批评；非难；评论"}],"example":{"english":"","chinese":""}},
+{"spelling":"arrest","meanings":[{"partOfSpeech":"v","definition":"逮捕"},{"partOfSpeech":"v","definition":"逮捕，拘留；阻止"}],"example":{"english":"","chinese":"[医]心搏停止"}},
+{"spelling":"afford","meanings":[{"partOfSpeech":"v","definition":"负担得起"},{"partOfSpeech":"v","definition":"担负得起…；提供"}],"example":{"english":"","chinese":"买得起；有能力负担"}},
+{"spelling":"implementation","meanings":[{"partOfSpeech":"n","definition":"实现，履行"}],"example":{"english":"","chinese":"项目执行；项目实现"}},
+{"spelling":"initiate","meanings":[{"partOfSpeech":"v","definition":"开始，发起"}],"example":{"english":"","chinese":""}},
+{"spelling":"enable","meanings":[{"partOfSpeech":"v","definition":"使能够"},{"partOfSpeech":"v","definition":"使能够，使可能"}],"example":{"english":"","chinese":""}},
+{"spelling":"narrow","meanings":[{"partOfSpeech":"adj","definition":"狭窄的"},{"partOfSpeech":"adj","definition":"狭的，狭窄的"}],"example":{"english":"","chinese":"狭义"}},
+{"spelling":"overcharge","meanings":[{"partOfSpeech":"v","definition":"向……多收费"}],"example":{"english":"","chinese":""}},
+{"spelling":"shortcut","meanings":[{"partOfSpeech":"n","definition":"捷径，近路"}],"example":{"english":"","chinese":"[计]快捷菜单"}},
+{"spelling":"leisure","meanings":[{"partOfSpeech":"n","definition":"悠闲，空闲"},{"partOfSpeech":"n","definition":"空闲时间；悠闲"}],"example":{"english":"","chinese":"业余时间"}},
+{"spelling":"original","meanings":[{"partOfSpeech":"adj","definition":"原始的，最初的"},{"partOfSpeech":"adj","definition":"最初的；新颖的"}],"example":{"english":"","chinese":"原设计；初始设计"}},
+{"spelling":"density","meanings":[{"partOfSpeech":"n","definition":"密度"},{"partOfSpeech":"n","definition":"密集，稠密；密度"}],"example":{"english":"","chinese":"高密度，密度高"}},
+{"spelling":"sphere","meanings":[{"partOfSpeech":"n","definition":"球体；范围"},{"partOfSpeech":"n","definition":"球，圆体；范围"}],"example":{"english":"","chinese":""}},
+{"spelling":"margin","meanings":[{"partOfSpeech":"n","definition":"页边的空白"},{"partOfSpeech":"n","definition":"页边的空白；边缘"}],"example":{"english":"","chinese":"[经]利润率"}},
+{"spelling":"department","meanings":[{"partOfSpeech":"n","definition":"部门"},{"partOfSpeech":"n","definition":"部，司，局，处，系"}],"example":{"english":"","chinese":"百货公司；百货商店"}},
+{"spelling":"desire","meanings":[{"partOfSpeech":"n","definition":"渴望，欲望"},{"partOfSpeech":"v","definition":"想要；要求"},{"partOfSpeech":"n","definition":"愿望"}],"example":{"english":"","chinese":"渴望"}},
+{"spelling":"legend","meanings":[{"partOfSpeech":"n","definition":"传奇"},{"partOfSpeech":"n","definition":"传说，传奇"}],"example":{"english":"","chinese":"n. 都市传奇，传闻"}},
+{"spelling":"dictator","meanings":[{"partOfSpeech":"n","definition":"独裁者；专制者"}],"example":{"english":"","chinese":""}},
+{"spelling":"diversity","meanings":[{"partOfSpeech":"n","definition":"多样性；差异"}],"example":{"english":"","chinese":"物种多样性；歧异度"}},
+{"spelling":"quit","meanings":[{"partOfSpeech":"v","definition":"放弃"},{"partOfSpeech":"v","definition":"离开，退出；停止"}],"example":{"english":"","chinese":"戒烟"}},
+{"spelling":"outgoing","meanings":[{"partOfSpeech":"adj","definition":"开朗的；外向的；外出的"}],"example":{"english":"","chinese":"外埠邮件"}},
+{"spelling":"solution","meanings":[{"partOfSpeech":"n","definition":"解决，解答"},{"partOfSpeech":"n","definition":"解决，解答；溶解"}],"example":{"english":"","chinese":"水溶液"}},
+{"spelling":"revenge","meanings":[{"partOfSpeech":"n","definition":"报仇"}],"example":{"english":"","chinese":"向某人进行报复"}},
+{"spelling":"reverse","meanings":[{"partOfSpeech":"n","definition":"相反情况"},{"partOfSpeech":"a","definition":"相反的"},{"partOfSpeech":"v","definition":"颠倒；翻转"},{"partOfSpeech":"n","definition":"背面"}],"example":{"english":"","chinese":"adv. 相反"}},
+{"spelling":"enroll","meanings":[{"partOfSpeech":"v","definition":"注册"}],"example":{"english":"","chinese":"参加；选课"}},
+{"spelling":"logically","meanings":[{"partOfSpeech":"adv","definition":"合乎情理地"}],"example":{"english":"","chinese":""}},
+{"spelling":"rental","meanings":[{"partOfSpeech":"n","definition":"租金"}],"example":{"english":"","chinese":"租赁房屋"}},
+{"spelling":"component","meanings":[{"partOfSpeech":"n","definition":"成分"},{"partOfSpeech":"n","definition":"组成部分；成分；组件"}],"example":{"english":"","chinese":"分量分析"}},
+{"spelling":"quotation","meanings":[{"partOfSpeech":"n","definition":"引文"},{"partOfSpeech":"n","definition":"引用；引文；报价单"}],"example":{"english":"","chinese":"报价单；报价量"}},
+{"spelling":"faith","meanings":[{"partOfSpeech":"n","definition":"信任"},{"partOfSpeech":"n","definition":"信任，信心；信仰"}],"example":{"english":"","chinese":"诚实；善意；真挚"}},
+{"spelling":"invalid","meanings":[{"partOfSpeech":"adj","definition":"无效的"}],"example":{"english":"","chinese":"无效数据"}},
+{"spelling":"invade","meanings":[{"partOfSpeech":"v","definition":"侵入，侵略"},{"partOfSpeech":"v","definition":"入侵，侵略；侵袭"}],"example":{"english":"","chinese":""}},
+{"spelling":"separately","meanings":[{"partOfSpeech":"adv","definition":"分别地，另行"}],"example":{"english":"","chinese":"[电]他励的"}},
+{"spelling":"strain","meanings":[{"partOfSpeech":"v","definition":"扭伤，拉伤"},{"partOfSpeech":"v","definition":"拉紧；尽力"}],"example":{"english":"","chinese":"应变速率"}},
+{"spelling":"accessible","meanings":[{"partOfSpeech":"adj","definition":"易接近的"}],"example":{"english":"","chinese":"易接近的；易达到的"}},
+{"spelling":"lap","meanings":[{"partOfSpeech":"n","definition":"〔坐着时的〕大腿部"},{"partOfSpeech":"n","definition":"〔坐着时的〕大腿部；一圈"}],"example":{"english":"","chinese":"最后一圈"}},
+{"spelling":"character","meanings":[{"partOfSpeech":"n","definition":"角色"},{"partOfSpeech":"n","definition":"性格；角色；特性"}],"example":{"english":"","chinese":"汉字"}},
+{"spelling":"widespread","meanings":[{"partOfSpeech":"adj","definition":"普遍的，广泛的"}],"example":{"english":"","chinese":""}},
+{"spelling":"rearrange","meanings":[{"partOfSpeech":"v","definition":"重新安排"}],"example":{"english":"","chinese":""}},
+{"spelling":"hospitalize","meanings":[{"partOfSpeech":"v","definition":"就医"}],"example":{"english":"","chinese":""}},
+{"spelling":"avail","meanings":[{"partOfSpeech":"v","definition":"有益, 有帮助"}],"example":{"english":"","chinese":"无效，完全无用"}},
+{"spelling":"instant","meanings":[{"partOfSpeech":"adj","definition":"立即的；速溶的"},{"partOfSpeech":"n","definition":"瞬间"},{"partOfSpeech":"adj","definition":"立即的"}],"example":{"english":"","chinese":"瞬间；马上"}},
+{"spelling":"democratic","meanings":[{"partOfSpeech":"adj","definition":"民主的"},{"partOfSpeech":"adj","definition":"民主的，民主政体的"}],"example":{"english":"","chinese":"（美）民主党"}},
+{"spelling":"barely","meanings":[{"partOfSpeech":"adv","definition":"仅仅，几乎不"}],"example":{"english":"","chinese":""}},
+{"spelling":"vanish","meanings":[{"partOfSpeech":"v","definition":"消失"},{"partOfSpeech":"v","definition":"突然不见，消失"}],"example":{"english":"","chinese":"从…失去"}},
+{"spelling":"caregiver","meanings":[{"partOfSpeech":"n","definition":"照料者"}],"example":{"english":"","chinese":""}},
+{"spelling":"harsh","meanings":[{"partOfSpeech":"adj","definition":"严酷的"},{"partOfSpeech":"adj","definition":"严厉的；刺耳的"}],"example":{"english":"","chinese":"严酷的现实"}},
+{"spelling":"reliable","meanings":[{"partOfSpeech":"adj","definition":"可靠的，可信赖的"}],"example":{"english":"","chinese":"质量可靠"}},
+{"spelling":"massive","meanings":[{"partOfSpeech":"adj","definition":"非常大的"}],"example":{"english":"","chinese":"大规模报复"}},
+{"spelling":"alcohol","meanings":[{"partOfSpeech":"n","definition":"酒精"},{"partOfSpeech":"n","definition":"酒精，乙醇"}],"example":{"english":"","chinese":"聚乙烯醇"}},
+{"spelling":"pregnant","meanings":[{"partOfSpeech":"adj","definition":"怀孕的"}],"example":{"english":"","chinese":"孕妇"}},
+{"spelling":"adapt","meanings":[{"partOfSpeech":"v","definition":"适应于"},{"partOfSpeech":"v","definition":"使适应；改编"}],"example":{"english":"","chinese":"（使）适合"}},
+{"spelling":"bogus","meanings":[{"partOfSpeech":"adj","definition":"假冒的"}],"example":{"english":"","chinese":""}},
+{"spelling":"slippery","meanings":[{"partOfSpeech":"adj","definition":"滑的"},{"partOfSpeech":"adj","definition":"滑的，使人滑跤的"}],"example":{"english":"","chinese":"n. 灾难性的急剧下滑"}},
+{"spelling":"current","meanings":[{"partOfSpeech":"adj","definition":"当前的"},{"partOfSpeech":"adj","definition":"当前的；通用的"}],"example":{"english":"","chinese":"现状"}},
+{"spelling":"overwhelm","meanings":[{"partOfSpeech":"v","definition":"压倒，战胜"}],"example":{"english":"","chinese":""}},
+{"spelling":"stressful","meanings":[{"partOfSpeech":"adj","definition":"充满著压力的"}],"example":{"english":"","chinese":"应激情境"}},
+{"spelling":"toothache","meanings":[{"partOfSpeech":"n","definition":"牙痛，牙疼"}],"example":{"english":"","chinese":""}},
+{"spelling":"eliminate","meanings":[{"partOfSpeech":"v","definition":"消除"},{"partOfSpeech":"v","definition":"消灭，消除；排除"}],"example":{"english":"","chinese":"消除贫困"}},
+{"spelling":"terminal","meanings":[{"partOfSpeech":"n","definition":"终点站"},{"partOfSpeech":"adj","definition":"末端的"},{"partOfSpeech":"n","definition":"集散站，终点站"}],"example":{"english":"","chinese":"农产品集散市场"}},
+{"spelling":"severe","meanings":[{"partOfSpeech":"adj","definition":"严重的"},{"partOfSpeech":"adj","definition":"严厉的"}],"example":{"english":"","chinese":"严格试验"}},
+{"spelling":"immobile","meanings":[{"partOfSpeech":"adj","definition":"稳定的，不变的"}],"example":{"english":"","chinese":""}},
+{"spelling":"diplomatic","meanings":[{"partOfSpeech":"adj","definition":"外交的"}],"example":{"english":"","chinese":"外交关系"}},
+{"spelling":"candidate","meanings":[{"partOfSpeech":"n","definition":"申请求职者；候选人"},{"partOfSpeech":"n","definition":"候选人；投考者"}],"example":{"english":"","chinese":"候选人；人选"}},
+{"spelling":"fund","meanings":[{"partOfSpeech":"n","definition":"基金，储备"},{"partOfSpeech":"v","definition":"提供资金"},{"partOfSpeech":"n","definition":"基金；资金"}],"example":{"english":"","chinese":"公积金"}},
+{"spelling":"complacency","meanings":[{"partOfSpeech":"n","definition":"自满，满足"}],"example":{"english":"","chinese":""}},
+{"spelling":"delight","meanings":[{"partOfSpeech":"n","definition":"高兴"},{"partOfSpeech":"n","definition":"快乐"},{"partOfSpeech":"v","definition":"使高兴"}],"example":{"english":"","chinese":"高兴"}}
+];
+
+/* ============================================================
+   核心逻辑
+   ============================================================ */
+const STORAGE_KEY = 'cet4_vocab';
+const WRONG_KEY = 'cet4_wrong';
+
+// 初始化：若 localStorage 无词库，写入内置
+if (!localStorage.getItem(STORAGE_KEY)) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(BUILTIN_WORDS));
+}
+
+let vocab = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+let currentWord = null;
+let currentOptions = [];
+let selectedIdx = -1;
+let answered = false;
+
+const wordDisplay = document.getElementById('wordDisplay');
+const optionsArea = document.getElementById('optionsArea');
+const confirmBtn = document.getElementById('confirmBtn');
+const nextBtn = document.getElementById('nextBtn');
+const resultCard = document.getElementById('resultCard');
+const progress = document.getElementById('progress');
+
+function getRandomInt(max) { return Math.floor(Math.random() * max); }
+
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (m < n) return levenshtein(b, a);
+  let prev = Array.from({length: n+1}, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    let curr = [i];
+    for (let j = 1; j <= n; j++) {
+      curr[j] = Math.min(curr[j-1]+1, prev[j]+1, prev[j-1]+(a[i-1]!==b[j-1]?1:0));
+    }
+    prev = curr;
+  }
+  return prev[n];
+}
+
+function pickDistractors(correctWord, count) {
+  const cPos = (correctWord.meanings[0] || {}).partOfSpeech || '';
+  const cSpell = correctWord.spelling.toLowerCase();
+  let candidates = vocab.filter(w => {
+    if (w.spelling === correctWord.spelling) return false;
+    const wPos = (w.meanings[0] || {}).partOfSpeech || '';
+    if (cPos && wPos && cPos !== wPos) return false;
+    return true;
+  });
+  candidates.sort((a, b) => {
+    const da = levenshtein(a.spelling.toLowerCase(), cSpell);
+    const db = levenshtein(b.spelling.toLowerCase(), cSpell);
+    return da - db;
+  });
+  return candidates.slice(0, count).map(w => {
+    const m = w.meanings[0] || {};
+    return (m.partOfSpeech ? m.partOfSpeech + ' ' : '') + (m.definition || '');
+  });
+}
+
+function newQuestion() {
+  answered = false;
+  selectedIdx = -1;
+  resultCard.style.display = 'none';
+  resultCard.innerHTML = '';
+  nextBtn.style.display = 'none';
+  confirmBtn.style.display = 'none';
+  optionsArea.innerHTML = '';
+
+  currentWord = vocab[getRandomInt(vocab.length)];
+  const correctDef = ((currentWord.meanings[0] || {}).partOfSpeech ? (currentWord.meanings[0].partOfSpeech + ' ') : '') + ((currentWord.meanings[0] || {}).definition || '');
+  const distractors = pickDistractors(currentWord, 3);
+  currentOptions = [correctDef, ...distractors];
+  // shuffle
+  for (let i = currentOptions.length - 1; i > 0; i--) {
+    const j = getRandomInt(i + 1);
+    [currentOptions[i], currentOptions[j]] = [currentOptions[j], currentOptions[i]];
+  }
+
+  wordDisplay.textContent = currentWord.spelling;
+  currentOptions.forEach((opt, i) => {
+    const div = document.createElement('div');
+    div.className = 'option';
+    div.textContent = opt;
+    div.onclick = () => {
+      if (answered) return;
+      document.querySelectorAll('.option').forEach(o => o.classList.remove('selected'));
+      div.classList.add('selected');
+      selectedIdx = i;
+      confirmBtn.style.display = 'block';
+    };
+    optionsArea.appendChild(div);
+  });
+  progress.textContent = `词库共 ${vocab.length} 词`;
+}
+
+confirmBtn.onclick = () => {
+  if (selectedIdx < 0 || answered) return;
+  answered = true;
+  confirmBtn.style.display = 'none';
+  document.querySelectorAll('.option').forEach((o, i) => {
+    o.classList.add('locked');
+    const correctDef = ((currentWord.meanings[0] || {}).partOfSpeech ? (currentWord.meanings[0].partOfSpeech + ' ') : '') + ((currentWord.meanings[0] || {}).definition || '');
+    if (i === selectedIdx && currentOptions[i] === correctDef) {
+      o.classList.add('correct');
+    } else if (currentOptions[i] === correctDef) {
+      o.classList.add('correct');
+    } else if (i === selectedIdx) {
+      o.classList.add('wrong');
+    }
+  });
+
+  const isCorrect = currentOptions[selectedIdx] === (((currentWord.meanings[0] || {}).partOfSpeech ? (currentWord.meanings[0].partOfSpeech + ' ') : '') + ((currentWord.meanings[0] || {}).definition || ''));
+  resultCard.style.display = 'block';
+  let html = `<div class="judge">${isCorrect ? '✅ 正确' : '❌ 错误'}</div>`;
+  html += `<div class="rc-word">${currentWord.spelling}</div>`;
+  currentWord.meanings.forEach(m => {
+    html += `<div class="rc-mean">${m.partOfSpeech ? m.partOfSpeech + ' ' : ''}${m.definition}</div>`;
+  });
+  if (currentWord.example && (currentWord.example.english || currentWord.example.chinese)) {
+    html += `<div class="rc-ex">${currentWord.example.english || ''}<br>${currentWord.example.chinese || ''}</div>`;
+  }
+  resultCard.innerHTML = html;
+
+  if (!isCorrect) {
+    const wrongs = JSON.parse(localStorage.getItem(WRONG_KEY) || '[]');
+    if (!wrongs.find(w => w.spelling === currentWord.spelling)) {
+      wrongs.push(currentWord);
+      localStorage.setItem(WRONG_KEY, JSON.stringify(wrongs));
+    }
+  }
+  nextBtn.style.display = 'block';
+};
+
+nextBtn.onclick = newQuestion;
+
+// 文件导入
+document.getElementById('fileInput').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    try {
+      const lines = ev.target.result.trim().split(/\r?\n/);
+      const data = lines.map(l => JSON.parse(l));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      vocab = data;
+      alert(`✅ 已导入 ${data.length} 词`);
+      newQuestion();
+    } catch(err) { alert('❌ 解析失败：' + err.message); }
+  };
+  r.readAsText(f);
+};
+
+// Tab 切换
+function switchTab(tab) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
+  if (tab === 'study') {
+    document.getElementById('page-study').classList.add('active');
+    document.querySelectorAll('.nav button')[0].classList.add('active');
+  } else {
+    document.getElementById('page-wrong').classList.add('active');
+    document.querySelectorAll('.nav button')[1].classList.add('active');
+    renderWrong();
+  }
+}
+
+function renderWrong() {
+  const list = document.getElementById('wrongList');
+  const wrongs = JSON.parse(localStorage.getItem(WRONG_KEY) || '[]');
+  list.innerHTML = '';
+  if (wrongs.length === 0) { list.innerHTML = '<p style="color:#999">暂无错题</p>'; return; }
+  wrongs.forEach((w, i) => {
+    const div = document.createElement('div');
+    div.className = 'wrong-item';
+    const def = (w.meanings[0] || {}).definition || '';
+    div.innerHTML = `<div><div class="wi-word">${w.spelling}</div><div class="wi-mean">${def}</div></div><button onclick="removeWrong(${i})">移出</button>`;
+    list.appendChild(div);
+  });
+}
+
+window.removeWrong = function(i) {
+  const wrongs = JSON.parse(localStorage.getItem(WRONG_KEY) || '[]');
+  wrongs.splice(i, 1);
+  localStorage.setItem(WRONG_KEY, JSON.stringify(wrongs));
+  renderWrong();
+};
+
+// 启动
+newQuestion();
+</script>
+</body>
+</html>
